@@ -1,0 +1,86 @@
+---
+- name: Chect sftp container
+  shell: "docker images | grep sftp_server"
+  register: chect_sftp_images
+  ignore_errors: yes
+  tags: sftp-current
+- name: Chect sftp password
+  shell: "docker inspect --format='{''{range .Config.Env}''}''{''{println .}''}''{''{end}''}' sftp_server | grep -P '^SFTP_PASS=' | sed 's/[^=]*=//'"
+  # shell: "docker inspect --format '{''{ index ( .Config.Env) 2 }''}' sftp_server | tr -d SFTP_PASS="
+  register: sftp_pass_current
+  tags: sftp-current
+  when: chect_sftp_images.stdout is defined
+- block: ############ chect current password ############ 
+  - name: Chect current SFTP_PASS
+    set_fact:
+      SFTP_PASS: "{{ sftp_pass_current.stdout }}"
+    register: sftp_current_password
+    # tags: sftp-current
+  - name: show current password {{ SFTP_USER }}
+    debug: msg="{{ SFTP_PASS }}"
+  tags: sftp-current
+  when: (chect_sftp_images.stdout is defined) and (sftp_pass_current.stdout | length > 0)
+############ chect current container ############ 
+- name: Copy Dockerfile
+  copy: src=templates/Dockerfile dest=/tmp/sftp/
+  register: dockerfile
+- block: ############ generate new pass for {{ SFTP_USER }} ############ 
+  - name: Set fact password
+    set_fact:
+      remaining_password_length: "{{ password_length -  password_specs | length }}"
+      password_spec_str: "{{ password_specs | join(',') }}"
+    tags: sftp-pass
+  - name: Generate password with required constraints
+    set_fact:
+      pwd_pool: "{{ pwd_pool | default([]) + [lookup('password', '/dev/null length=1 chars=' ~item)]}}"
+    loop: "{{ password_specs }}"
+    tags: sftp-pass
+  - name: Set env SFTP_PASS
+    set_fact:
+      SFTP_PASS: "{{ pwd_pool | join('') + lookup('password', '/dev/null length=' ~ remaining_password_length ~ ' chars=' ~ password_spec_str )}}"
+    register: sftp_password
+    tags: sftp-pass
+  when: (chect_sftp_images.stdout is not defined) or (sftp_pass_current.stdout | length == 0)
+############ generate new pass for {{ SFTP_USER }} ############ 
+- name: Stop sftp server
+  docker_container:
+    name: sftp_server
+    state: absent
+  tags: sftp-stop
+- block: ############ build new images ############ 
+  - name: delete old build image
+    docker_image:
+      name: sftp_server
+      state: absent
+      tag: v1
+    # when: dockerfile.changed
+  - name: build container image sftp_server v1
+    docker_image:
+      name: sftp_server
+      build:
+        path: /tmp/sftp/
+        args:
+          SFTP_USER: "{{ SFTP_USER }}"
+          SFTP_PASS: "{{ SFTP_PASS }}"
+          ACCESS_PASS: "{{ ACCESS_PASS }}"
+          ACCESS_SSHKEY: "{{ ACCESS_SSHKEY }}"
+      tag: v1
+      source: build
+  when: (dockerfile.changed) or (sftp_pass_current.stdout | length == 0)
+
+- name: Start ssftp server container
+  docker_container:
+    name: sftp_server
+    image: sftp_server:v1
+    restart_policy: "unless-stopped"
+    recreate: yes
+    ports:
+      - "{{ SFTP_PORT }}:22"
+    env:
+      TZ: "{{ TIMEZONE }}"
+    volumes:
+    - "{{ SFTP_VOLUME }}:/var/www/{{ SFTP_USER }}/"
+    - "~/.ssh/authorized_keys:/home/{{ SFTP_USER }}/.ssh/authorized_keys:ro"
+- name: show password {{ SFTP_USER }}
+  debug: msg="{{ SFTP_PASS }}"
+  tags: sftp-pass

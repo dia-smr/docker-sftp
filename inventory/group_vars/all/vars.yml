@@ -1,0 +1,15 @@
+TIMEZONE: "Europe/Samara"
+
+SFTP_USER: "admin"                #логин для доступа к sftp
+# SFTP_PASS: "admin"                #пароль для доступа к sftp(!!!Будет игнорироваться, пароль генерирует сам ansible)
+SFTP_PORT: "65022"                #порт для подключения к sftp серверу
+SFTP_VOLUME: "sftp_vol"           #название создаваемого volume где будут храниться файлы
+ACCESS_PASS: "yes"                #разрешить доступ по паролю
+ACCESS_SSHKEY: "yes"             #разрешить доступ по ключу
+
+password_length: 12               #длина пароля
+password_specs:                   #спецификация к паролю так же доступны ascii_letters, ascii_lowercase, ascii_uppercase, digits, hexdigits, octdigits, printable, punctuation, whitespace
+- digits                          #0-9
+- ascii_lowercase                 #a-z
+- ascii_uppercase                 #A-Z
+- punctuation                     # !”#$%&\’()*+,-./:;<=>?@[\\]^_`{|}~
