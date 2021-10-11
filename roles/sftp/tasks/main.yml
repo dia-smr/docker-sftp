@@ -1,15 +1,21 @@
 ---
 - name: Chect sftp container
   shell: "docker images | grep sftp_server"
+  changed_when: false
   register: chect_sftp_images
   ignore_errors: yes
   tags: sftp-current
 - name: Chect sftp password
-  shell: "docker inspect --format='{''{range .Config.Env}''}''{''{println .}''}''{''{end}''}' sftp_server | grep -P '^SFTP_PASS=' | sed 's/[^=]*=//'"
+  shell: "docker image inspect --format='{''{range .Config.Env}''}''{''{println .}''}''{''{end}''}' sftp_server:v1 | grep -P '^SFTP_PASS=' | sed 's/[^=]*=//'"
   # shell: "docker inspect --format '{''{ index ( .Config.Env) 2 }''}' sftp_server | tr -d SFTP_PASS="
   register: sftp_pass_current
   tags: sftp-current
   when: chect_sftp_images.stdout is defined
+- name: Create a directory if it does not exist
+  ansible.builtin.file:
+    path: "{{ path }}/data/upload"
+    state: directory
+    mode: '777'
 - block: ############ chect current password ############ 
   - name: Chect current SFTP_PASS
     set_fact:
@@ -22,7 +28,7 @@
   when: (chect_sftp_images.stdout is defined) and (sftp_pass_current.stdout | length > 0)
 ############ chect current container ############ 
 - name: Copy Dockerfile
-  copy: src=templates/Dockerfile dest=/tmp/sftp/
+  copy: src=templates/Dockerfile dest="{{ path }}"
   register: dockerfile
 - block: ############ generate new pass for {{ SFTP_USER }} ############ 
   - name: Set fact password
@@ -42,7 +48,7 @@
     tags: sftp-pass
   when: (chect_sftp_images.stdout is not defined) or (sftp_pass_current.stdout | length == 0)
 ############ generate new pass for {{ SFTP_USER }} ############ 
-- name: Stop sftp server
+- name: Down sftp server
   docker_container:
     name: sftp_server
     state: absent
@@ -58,7 +64,7 @@
     docker_image:
       name: sftp_server
       build:
-        path: /tmp/sftp/
+        path: "{{ path }}"
         args:
           SFTP_USER: "{{ SFTP_USER }}"
           SFTP_PASS: "{{ SFTP_PASS }}"
@@ -72,14 +78,14 @@
   docker_container:
     name: sftp_server
     image: sftp_server:v1
-    restart_policy: "unless-stopped"
+    restart_policy: "always"
     recreate: yes
     ports:
       - "{{ SFTP_PORT }}:22"
     env:
       TZ: "{{ TIMEZONE }}"
     volumes:
-    - "{{ SFTP_VOLUME }}:/var/www/{{ SFTP_USER }}/"
+    - "{{ SFTP_VOLUME }}:/var/www/{{ SFTP_USER }}/data/upload"
     - "~/.ssh/authorized_keys:/home/{{ SFTP_USER }}/.ssh/authorized_keys:ro"
 - name: show password {{ SFTP_USER }}
   debug: msg="{{ SFTP_PASS }}"

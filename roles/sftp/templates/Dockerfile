@@ -14,10 +14,11 @@ RUN apt-get update \
 && apt-get clean
 
 RUN useradd -m -p $(mkpasswd -m sha-512 -s ${SFTP_PASS}) ${SFTP_USER} \
-&& mkdir -p "/var/www/${SFTP_USER}/Upload" \
+&& mkdir -p "/var/www/${SFTP_USER}/data/upload" \
 && mkdir /var/run/sshd \
-&& chown ${SFTP_USER}:${SFTP_USER} -R /var/www/${SFTP_USER}/Upload \
+&& chown ${SFTP_USER}:${SFTP_USER} -R /var/www/${SFTP_USER}/data/upload \
 && chown ${SFTP_USER}:${SFTP_USER} -R /home/${SFTP_USER} \
+&& chmod 777 /var/www/${SFTP_USER}/data/upload \
 && echo "Match User ${SFTP_USER} \n\
         X11Forwarding no \n\
         PasswordAuthentication ${ACCESS_PASS} \n\
@@ -26,11 +27,7 @@ RUN useradd -m -p $(mkpasswd -m sha-512 -s ${SFTP_PASS}) ${SFTP_USER} \
         AllowAgentForwarding no \n\
         PermitTunnel no \n\
         ForceCommand internal-sftp \n\
-        ChrootDirectory /var/www/${SFTP_USER} \n\
+        ChrootDirectory /var/www/${SFTP_USER}/data \n\
 ">> /etc/ssh/sshd_config
-# USER ${SFTP_USER}
-WORKDIR /var/www/${SFTP_USER}/Upload
-
-EXPOSE 20 21 22
 
 CMD ["/usr/sbin/sshd", "-D"]
